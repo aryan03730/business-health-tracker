@@ -2,7 +2,7 @@
 
 A mobile-first web app that tells a small business owner, in about two minutes, whether the business is making money, how far it is from break-even, and what to do next.
 
-**Live app:** _add link after deploying_ · **API:** _add link after deploying_
+**Live app:** https://business-health-tracker.vercel.app · **API:** https://business-health-tracker.onrender.com/health
 
 > The API runs on a free hosting tier and goes to sleep after 15 minutes without traffic. The first request after that can take about a minute.
 
@@ -155,7 +155,7 @@ Base URL: `http://localhost:5000` locally. Every response is JSON, including err
 | 404 | `{"error": "not_found", "message": "Scenario not found."}` |
 | 405 / 500 | `{"error": "...", "message": "..."}` (never an HTML stack trace) |
 
-Validation rules: all five numbers are required. Investment, running costs, cost per unit and units sold must be ≥ 0. Selling price must be > 0 and higher than the cost per unit. Units sold must be a whole number.
+Validation rules: all five numbers are required. Numbers sent as text may include commas, a `$` sign and spaces, and may be written as `5`, `5.`, `5.25` or `.5`. Forms such as `1e3`, `1_000` or `inf` are rejected. The form and the API use the same rule, checked against one shared list of examples (`shared/number_format_cases.json`) in both test suites. Investment, running costs, cost per unit and units sold must be ≥ 0. Selling price must be > 0 and higher than the cost per unit. Units sold must be a whole number.
 
 ## Run it locally
 
@@ -189,7 +189,7 @@ npm install
 npm run dev                                         # http://localhost:5173
 ```
 
-The frontend calls `http://localhost:5000` by default. To change that, copy `frontend/.env.example` to `frontend/.env` and set `VITE_API_URL`.
+The frontend calls `http://127.0.0.1:5000` by default. It uses `127.0.0.1` rather than `localhost` because on macOS, `localhost:5000` can reach the AirPlay Receiver instead of Flask. To change that, copy `frontend/.env.example` to `frontend/.env` and set `VITE_API_URL`.
 
 ### Tests
 
@@ -199,24 +199,64 @@ pytest -q                     # uses in-memory SQLite, no setup needed
 # run the same tests against PostgreSQL:
 createdb -U postgres -O bht bht_test
 TEST_DATABASE_URL=postgresql+psycopg://bht:bht@localhost:5432/bht_test pytest -q
+
+cd ../frontend
+npm test                      # form validation, using the same number cases as the API
 ```
 
-There are 47 tests: calculations (including the worked example and the status boundaries), validation messages, and every API endpoint including its error cases. GitHub Actions runs them against PostgreSQL 16 on every push, and also lints and builds the frontend.
+> **Warning:** `TEST_DATABASE_URL` must point only at a throwaway test database. The tests **delete every table** in it before and after each test, so pointing it at your real database (local `bht` or Neon) would wipe your data. As a safety net, the tests refuse to run unless the database name contains `test`, but use a separate database regardless.
+
+The backend has 71 tests: calculations (including the worked example and the status boundaries), validation messages, number formats, CORS, and every API endpoint including its error cases. The frontend has 22 validation tests. GitHub Actions runs both on every push (the backend against PostgreSQL 16), and also lints and builds the frontend.
 
 ## Deploy (free tiers)
 
 | Piece | Host | Note |
 |---|---|---|
-| Database | [Neon](https://neon.tech) free plan | Render's free Postgres is deleted after 30 days, so it isn't used here |
-| API | Render free web service | Sleeps after 15 min idle, takes about 1 min to wake |
-| Frontend | Render static site | Free |
+| Database | [Neon](https://neon.tech) free plan | Doesn't expire (Render's free Postgres is deleted after 30 days) |
+| API | [Render](https://render.com) free web service | Sleeps after 15 min idle, takes about 1 min to wake |
+| Frontend | [Vercel](https://vercel.com) Hobby plan | Static build of the React app |
 
-1. Create a Neon project and copy its connection string (`postgresql://...?sslmode=require`).
-2. Push this repo to GitHub. In Render, choose **New → Blueprint** and select the repo. `render.yaml` defines both services.
-3. When Render asks for environment variables, fill them in:
-   - `bht-api` → `DATABASE_URL` = the Neon string, and `CORS_ORIGINS` = the frontend URL (for example `https://bht-web.onrender.com`)
-   - `bht-web` → `VITE_API_URL` = the API URL (for example `https://bht-api.onrender.com`)
-4. Once both are live, open `<api>/health`, then try the app on a phone. Put both links at the top of this README.
+### 1. Database (Neon)
+1. Create a Neon project (region: AWS US West 2, Oregon, the same region as the API).
+2. Click **Connect** and copy the connection string (`postgresql://...?sslmode=require`). Treat it like a password: it goes only into Render's environment variables, never into the code.
+
+The API creates its `scenarios` table on first start, so no migration step is needed.
+
+### 2. API (Render)
+In Render, choose **New → Web Service** and pick this repo.
+
+| Setting | Value |
+|---|---|
+| Root Directory | `backend` |
+| Runtime | Python 3 |
+| Build Command | `pip install -r requirements.txt` |
+| Start Command | `gunicorn wsgi:app` |
+| Instance Type | Free |
+
+Environment variables:
+
+| Key | Value |
+|---|---|
+| `DATABASE_URL` | the Neon connection string |
+| `PYTHON_VERSION` | `3.13.5` |
+| `CORS_ORIGINS` | the Vercel URL, with no trailing `/` (here: `https://business-health-tracker.vercel.app`) |
+
+Check it with `<api URL>/health`, which returns `{"status":"ok"}`.
+
+**`CORS_ORIGINS` is required in production.** Without it, the API allows only local development origins (`localhost:5173` and `127.0.0.1:5173`), so the live site can't call it. It accepts a comma-separated list if you need more than one origin.
+
+### 3. Frontend (Vercel)
+In Vercel, choose **Add New → Project** and import this repo.
+
+| Setting | Value |
+|---|---|
+| Root Directory | `frontend` |
+| Framework Preset | Vite |
+| Environment variable | `VITE_API_URL` = the Render API URL, with no trailing `/` |
+
+`frontend/vercel.json` sends every path to `index.html`, so shared dashboard links such as `/s/<id>` still work after a refresh. `VITE_API_URL` is built into the app at build time, so if you change it, redeploy the frontend.
+
+Both hosts redeploy automatically when you push to `main`.
 
 Free-tier limits change, so check each host's current pricing page before deploying.
 
@@ -234,7 +274,10 @@ frontend/
   src/pages/          Home, Wizard (3-step form, also used to edit), Dashboard
   src/validation.js   client-side copy of the server rules
   src/api.js          fetch wrapper with friendly error messages
-render.yaml           Render Blueprint
+  tests/              Node test runner: form validation
+  vercel.json         SPA rewrite for Vercel
+shared/
+  number_format_cases.json   number formats both test suites check
 ```
 
 ## Not built yet
