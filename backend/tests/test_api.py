@@ -118,3 +118,28 @@ def test_wrong_method_is_405(client):
     r = client.delete("/scenarios/abc")
     assert r.status_code == 405
     assert r.is_json
+def _cors_client(monkeypatch, origins=None):
+    from app import create_app
+
+    if origins is None:
+        monkeypatch.delenv("CORS_ORIGINS", raising=False)
+    else:
+        monkeypatch.setenv("CORS_ORIGINS", origins)
+    app = create_app({"TESTING": True, "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"})
+    return app.test_client()
+
+
+def test_cors_default_allows_only_local_dev(monkeypatch):
+    c = _cors_client(monkeypatch)
+    ok = c.get("/health", headers={"Origin": "http://localhost:5173"})
+    assert ok.headers.get("Access-Control-Allow-Origin") == "http://localhost:5173"
+    other = c.get("/health", headers={"Origin": "https://evil.example"})
+    assert "Access-Control-Allow-Origin" not in other.headers
+
+
+def test_cors_uses_configured_frontend(monkeypatch):
+    c = _cors_client(monkeypatch, "https://business-health-tracker.vercel.app/")
+    ok = c.get("/health", headers={"Origin": "https://business-health-tracker.vercel.app"})
+    assert ok.headers.get("Access-Control-Allow-Origin") == "https://business-health-tracker.vercel.app"
+    local = c.get("/health", headers={"Origin": "http://localhost:5173"})
+    assert "Access-Control-Allow-Origin" not in local.headers

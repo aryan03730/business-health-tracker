@@ -10,6 +10,7 @@ from models import Scenario, db
 from suggestions import build_suggestions
 
 MAX_NAME_LENGTH = 120
+DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 
 
 def _database_url() -> str:
@@ -71,8 +72,10 @@ def create_app(config: dict | None = None) -> Flask:
     if config:
         app.config.update(config)
 
-    origins = os.environ.get("CORS_ORIGINS", "*")
-    CORS(app, origins=[o.strip() for o in origins.split(",")])
+    # Only these sites may call the API from a browser. In production, set
+    # CORS_ORIGINS to the deployed frontend URL; the default covers local dev only.
+    origins = os.environ.get("CORS_ORIGINS", DEFAULT_CORS_ORIGINS)
+    CORS(app, origins=[o.strip().rstrip("/") for o in origins.split(",") if o.strip()])
 
     db.init_app(app)
     with app.app_context():
