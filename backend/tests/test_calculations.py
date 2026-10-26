@@ -159,3 +159,23 @@ def test_missing_fields_are_all_reported():
 def test_non_object_body_is_rejected():
     with pytest.raises(ValidationError):
         validate_inputs([1, 2, 3])
+# ---- number formats must match the frontend (shared/number_format_cases.json) ----
+import json
+import pathlib
+
+CASES = json.loads(
+    (pathlib.Path(__file__).resolve().parents[2] / "shared" / "number_format_cases.json").read_text()
+)
+
+
+@pytest.mark.parametrize("text, expected", CASES["accepted"].items())
+def test_shared_number_cases_accepted(text, expected):
+    from calculations import _to_number
+    assert _to_number(text, "Value") == expected
+
+
+@pytest.mark.parametrize("text", CASES["rejected"])
+def test_shared_number_cases_rejected(text):
+    from calculations import _to_number
+    with pytest.raises(ValueError, match="must be a number"):
+        _to_number(text, "Value")

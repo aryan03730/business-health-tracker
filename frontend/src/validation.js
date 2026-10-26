@@ -1,6 +1,9 @@
 // Mirrors backend/calculations.py validate_inputs so users get instant feedback.
 // The server still validates everything; its messages win if they differ.
-import { cleanNumber } from './format'
+import { cleanNumber } from './format.js'
+
+// Must match NUMBER_PATTERN in backend/calculations.py
+export const NUMBER_PATTERN = /^-?(\d+\.?\d*|\.\d+)$/
 
 export const FIELDS = {
   initial_investment: 'Initial investment',
@@ -19,7 +22,7 @@ export const STEP_FIELDS = [
 function parse(raw, label) {
   const s = cleanNumber(raw)
   if (s === '') return { error: `${label} is required.` }
-  if (!/^-?\d*\.?\d+$/.test(s)) return { error: `${label} must be a number.` }
+  if (!NUMBER_PATTERN.test(s)) return { error: `${label} must be a number.` }
   const n = Number(s)
   if (n > 1e12) return { error: `${label} is too large.` }
   return { value: n }

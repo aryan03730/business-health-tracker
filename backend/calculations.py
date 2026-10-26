@@ -6,6 +6,7 @@ pure (no database, no Flask) so they can be tested in isolation.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, asdict
 
 # Status thresholds (scope doc, section 10, decision 1).
@@ -23,6 +24,10 @@ FIELDS = {
 }
 
 MAX_VALUE = 1_000_000_000_000  # keeps numbers sane and inside the DB column size
+
+# Text accepted as a number, after commas, "$" and spaces are removed.
+# Must match NUMBER_PATTERN in frontend/src/validation.js.
+NUMBER_PATTERN = re.compile(r"-?(\d+\.?\d*|\.\d+)")
 
 
 class ValidationError(ValueError):
@@ -57,14 +62,20 @@ class Results:
 
 
 def _to_number(raw, label: str) -> float:
-    if raw is None or (isinstance(raw, str) and raw.strip() == ""):
-        raise ValueError(f"{label} is required.")
     if isinstance(raw, bool):
         raise ValueError(f"{label} must be a number.")
-    try:
-        value = float(raw)
-    except (TypeError, ValueError):
-        raise ValueError(f"{label} must be a number.") from None
+    if raw is None:
+        raise ValueError(f"{label} is required.")
+    if isinstance(raw, str):
+        text = re.sub(r"[,$\s]", "", raw)  # same cleanup as the frontend
+        if text == "":
+            raise ValueError(f"{label} is required.")
+        if not NUMBER_PATTERN.fullmatch(text):
+            raise ValueError(f"{label} must be a number.")
+        raw = text
+    elif not isinstance(raw, (int, float)):
+        raise ValueError(f"{label} must be a number.")
+    value = float(raw)
     if math.isnan(value) or math.isinf(value):
         raise ValueError(f"{label} must be a number.")
     if value > MAX_VALUE:
